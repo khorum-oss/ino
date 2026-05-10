@@ -1,0 +1,7 @@
+package org.khorum.oss.ino.dsl.config
+
+const val DEFAULT_LOCAL_MODEL_HOST = "http://localhost:11434"
+const val DEFAULT_TIMEOUT_SECONDS = 120
+const val DEFAULT_OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
+const val DEFAULT_ANTHROPIC_API_KEY_ENV_VAR = "OPENAI_API_KEY"
+const val DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
