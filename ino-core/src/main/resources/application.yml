@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: ino-core
+  datasource:
+    url: jdbc:sqlite:${ino.home:${user.home}/.ino}/state.db
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      pool-name: ino-sqlite
+      # SQLite serializes writes — single connection is intentional.
+      maximum-pool-size: 1
+      minimum-idle: 1
+      # Pragmas applied once per connection at acquisition.
+      # WAL: concurrent read while one writer holds the journal.
+      # foreign_keys: enforce FK constraints (off by default in SQLite).
+      # synchronous=NORMAL: balanced durability vs throughput.
+      connection-init-sql: "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;"
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+
+server:
+  port: 8080
+
+ino:
+  home: ${user.home}/.ino
+  dashboard:
+    embedded: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    liquibase: INFO

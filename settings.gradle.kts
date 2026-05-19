@@ -11,8 +11,8 @@ pluginManagement {
 
 rootProject.name = "ino"
 
-include(":ino-dsl")
+include(":ino-dsl", ":ino-core")
 // Phase-1 modules added as they come online:
-// include(":ino-core", ":ino-test")
+// include(":ino-test")
 // include(":ino-providers-anthropic", ":ino-providers-openai", ":ino-providers-ollama")
 // include(":ino-tools-builtin")
