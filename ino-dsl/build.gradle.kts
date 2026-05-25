@@ -8,6 +8,7 @@
 // either way, so downstream modules on Kotlin 2.3 can still consume what we produce here.
 
 plugins {
+    `java-library`                       // enables `api(...)` configuration
     kotlin("jvm") version "2.1.20"
     id("com.google.devtools.ksp") version "2.1.20-1.0.32"
 }
@@ -22,8 +23,10 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
-    // Konstellation: annotations at compile time, processor for KSP
-    implementation("org.khorum.oss.konstellation:konstellation-meta-dsl:1.0.15")
+    // Konstellation: annotations at compile time, processor for KSP.
+    // Exposed as `api` because konstellation-generated builders extend
+    // CoreDslBuilder from meta-dsl — consumers (ino-core, etc.) need it.
+    api("org.khorum.oss.konstellation:konstellation-meta-dsl:1.0.15")
     ksp("org.khorum.oss.konstellation:konstellation-dsl:2.0.14")
 
     testImplementation(kotlin("test"))
