@@ -14,6 +14,10 @@ plugins {
     kotlin("plugin.spring") version "2.3.10"
     id("org.springframework.boot") version "4.1.0-M1"
     id("io.spring.dependency-management") version "1.1.7"
+    // Kover for test coverage. Detekt is intentionally NOT applied here —
+    // Detekt 1.23.x is incompatible with Kotlin 2.3.x at the Gradle-extension
+    // level, and Detekt 2.x isn't released yet. Re-add once Detekt 2.0 ships.
+    id("org.jetbrains.kotlinx.kover") version "0.9.4"
 }
 
 version = file("VERSION").readText().trim()
