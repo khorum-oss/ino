@@ -24,6 +24,15 @@ ino:
   home: ${user.home}/.ino
   dashboard:
     embedded: true
+  providers:
+    openai:
+      base-url: https://api.openai.com
+    local:
+      name: llama-local
+      description: "Local llama.cpp server."
+      model: qwen3.6-35b-a3b
+      base-url: http://localhost:11436
+      system-prompt: "You are a helpful, concise assistant. Reply in plain text."
 
 management:
   endpoints:

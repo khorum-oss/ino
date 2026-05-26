@@ -1,0 +1,153 @@
+name: Merge Main - Bump & Publish
+run-name: Bump & Publish by ${{ github.actor }}
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump-version:
+        description: 'Bump the patch version before publishing'
+        type: boolean
+        default: true
+
+concurrency:
+  group: merge-main
+  cancel-in-progress: false
+
+# Mirrors spektr's merge-main shape with two notes:
+#   - Publishing to DigitalOcean Spaces is gated behind whether ino-core has
+#     the `digital-ocean-spaces` Gradle plugin applied. It currently doesn't —
+#     the publish step is left in place but will be a no-op until that plugin
+#     is wired into ino-core/build.gradle.kts.
+#   - Docker / jib publish is not yet wired and is omitted.
+
+jobs:
+  # --- Bump VERSION file ---
+  version:
+    if: >-
+      github.event_name == 'push' ||
+      github.event.inputs.bump-version == 'true'
+    uses: khorum-oss/public-cicd/.github/workflows/version-bump.yml@main
+    permissions:
+      contents: write
+    with:
+      version-file: 'ino-core/VERSION'
+
+  # --- Publish to DigitalOcean Spaces ---
+  publish:
+    needs: version
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read-version.outputs.version }}
+    steps:
+      - name: Checkout latest
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Read version
+        id: read-version
+        run: echo "version=$(cat ino-core/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java & Gradle
+        uses: khorum-oss/public-cicd/.github/actions/setup-java-gradle@main
+        with:
+          java-version: '21'
+
+      - name: Publish ino-core to DigitalOcean Spaces
+        env:
+          DO_SPACES_API_KEY: ${{ secrets.DO_SPACES_API_KEY }}
+          DO_SPACES_SECRET: ${{ secrets.DO_SPACES_SECRET }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        # No-op until the digital-ocean-spaces Gradle plugin is wired into
+        # ino-core/build.gradle.kts. Once applied, this step will publish.
+        run: |
+          if ./gradlew :ino-core:tasks --no-daemon 2>/dev/null | grep -qE "^uploadToDigitalOceanSpaces"; then
+            ./gradlew :ino-core:uploadToDigitalOceanSpaces --no-daemon
+          else
+            echo "::warning:::ino-core:uploadToDigitalOceanSpaces task not found; skipping publish. Apply the org.khorum.oss.plugins.open.publishing.digital-ocean-spaces plugin to enable."
+          fi
+
+  # --- Coverage baseline for main ---
+  coverage-and-sonar:
+    name: Coverage & SonarCloud (main baseline)
+    needs: publish
+    if: always() && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0  # required for SonarCloud blame/new-code detection
+
+      - name: Setup Java & Gradle
+        uses: khorum-oss/public-cicd/.github/actions/setup-java-gradle@main
+        with:
+          java-version: '21'
+
+      - name: Generate Kover XML report
+        run: ./gradlew :ino-core:koverXmlReport --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ino-core/build/reports/kover/report.xml
+          fail_ci_if_error: false
+
+      - name: SonarCloud Scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew sonar --no-daemon
+
+  # --- GitHub Release ---
+  release:
+    needs: [ version, publish ]
+    if: always() && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout latest
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Create release tag
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | head -n 1)
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
+          else
+            NOTES=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes "${NOTES}" \
+            --target main
+
+  # --- Notification ---
+  notify-discord:
+    name: Notify Discord
+    needs: [ version, publish, release, coverage-and-sonar ]
+    if: always()
+    uses: khorum-oss/public-cicd/.github/workflows/notify-discord.yml@main
+    with:
+      runs-on: ubuntu-latest
+      workflow_name: ${{ github.workflow }}
+      build_result: ${{ needs.publish.result == 'success' && 'success' || 'failure' }}
+      version: ${{ needs.publish.outputs.version || '' }}
+      custom_description: Published to open-reliquary
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.PUBLIC_RELEASE_DISCORD_WEBHOOK }}

@@ -25,6 +25,7 @@ import org.khorum.oss.konstellation.metaDsl.annotation.defaults.state.standard.N
  */
 interface LlmProviderConfig {
     val model: String
+    fun providerId(): String = this::class.qualifiedName ?: "unknown"
 }
 
 /**
@@ -96,7 +97,9 @@ data class AnthropicConfig(
     val timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS,
     @DefaultValue(value = DEFAULT_ANTHROPIC_VERSION)
     val anthropicVersion: String = DEFAULT_ANTHROPIC_VERSION,
-) : LlmProviderConfig
+) : LlmProviderConfig {
+    override fun providerId(): String = "anthropic"
+}
 
 /**
  * OpenAI (Chat Completions / Responses) configuration.
@@ -120,7 +123,9 @@ data class OpenAiConfig(
     val project: String? = null,
     @DefaultFalse(negationTemplate = NegationFunctionTemplate.DISABLE)
     val parallelToolCalls: Boolean = false,
-) : LlmProviderConfig
+) : LlmProviderConfig {
+    override fun providerId(): String = "openai"
+}
 
 /**
  * Local configuration.
@@ -141,4 +146,6 @@ data class LocalConfig(
     @DefaultValue(value = DEFAULT_TIMEOUT_SECONDS.toString())
     val timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS,
     val keepAliveSeconds: Int? = null,
-) : LlmProviderConfig
+) : LlmProviderConfig {
+    override fun providerId(): String = "local"
+}

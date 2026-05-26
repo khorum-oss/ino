@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   ino — cyberpunk theme
+   ---------------------------------------------------------------------------
+   Palette: deep near-black background, hot magenta + cyan as accents, with
+   a muted purple for ambient framing. Sharp edges (radius near 0), narrow
+   neon borders, subtle glow on accent text. Scanline + grid overlays
+   provide CRT atmosphere without harming readability.
+   --------------------------------------------------------------------------- */
+
+@theme {
+    /* Surfaces */
+    --color-bg:        oklch(0.10 0.02 280);   /* near-black violet */
+    --color-bg-soft:   oklch(0.14 0.03 280);
+    --color-bg-card:   oklch(0.17 0.035 285);
+    --color-bg-input:  oklch(0.13 0.025 280);
+
+    /* Foreground */
+    --color-fg:        oklch(0.92 0.02 240);   /* pale cool white */
+    --color-fg-muted:  oklch(0.62 0.03 250);
+    --color-fg-dim:    oklch(0.42 0.03 260);
+
+    /* Accents */
+    --color-neon-pink: oklch(0.74 0.32 350);   /* hot magenta */
+    --color-neon-cyan: oklch(0.85 0.18 215);   /* electric cyan */
+    --color-neon-lime: oklch(0.92 0.22 130);   /* terminal-green */
+    --color-neon-amber: oklch(0.82 0.20 75);
+
+    /* Semantic */
+    --color-border:    oklch(0.28 0.04 285);
+    --color-border-bright: oklch(0.44 0.10 320);
+    --color-danger:    oklch(0.68 0.27 25);
+
+    /* Fonts */
+    --font-sans: "Space Grotesk", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+
+    /* Radius — sharp by design */
+    --radius-xs: 0px;
+    --radius-sm: 2px;
+    --radius-md: 4px;
+    --radius-lg: 6px;
+
+    /* Custom shadows for the neon glow look */
+    --shadow-neon-pink: 0 0 12px oklch(0.74 0.32 350 / 0.45), 0 0 30px oklch(0.74 0.32 350 / 0.25);
+    --shadow-neon-cyan: 0 0 12px oklch(0.85 0.18 215 / 0.45), 0 0 30px oklch(0.85 0.18 215 / 0.25);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-sans);
+    color: var(--color-fg);
+    background:
+        radial-gradient(ellipse at 20% 0%, oklch(0.18 0.06 320 / 0.25), transparent 60%),
+        radial-gradient(ellipse at 80% 100%, oklch(0.18 0.10 215 / 0.18), transparent 60%),
+        var(--color-bg);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+::selection {
+    background: var(--color-neon-pink);
+    color: var(--color-bg);
+}
+
+/* Better focus rings — neon, not browser-default ugly */
+:focus-visible {
+    outline: 1px solid var(--color-neon-cyan);
+    outline-offset: 2px;
+    box-shadow: var(--shadow-neon-cyan);
+}
+
+/* Mono input/caret tones */
+input, textarea {
+    caret-color: var(--color-neon-pink);
+}
+
+/* ---------------------------------------------------------------------------
+   Atmospheric overlays
+   --------------------------------------------------------------------------- */
+
+.scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        oklch(0 0 0 / 0.18) 3px,
+        transparent 4px
+    );
+    mix-blend-mode: multiply;
+    z-index: 100;
+    opacity: 0.35;
+}
+
+.grid-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(oklch(0.55 0.10 320 / 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(0.55 0.10 320 / 0.05) 1px, transparent 1px);
+    background-size: 64px 64px;
+    z-index: 1;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+
+/* ---------------------------------------------------------------------------
+   Utilities — applied via class= rather than @apply for clarity
+   --------------------------------------------------------------------------- */
+
+.text-glow-pink   { text-shadow: 0 0 10px oklch(0.74 0.32 350 / 0.6); }
+.text-glow-cyan   { text-shadow: 0 0 10px oklch(0.85 0.18 215 / 0.6); }
+.border-glow-pink { box-shadow: var(--shadow-neon-pink); }
+.border-glow-cyan { box-shadow: var(--shadow-neon-cyan); }
+
+.font-mono   { font-family: var(--font-mono); }
+.font-display { font-family: var(--font-display); }
+
+/* Subtle terminal-cursor blink for streaming indicators */
+@keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.15; }
+}
+.cursor-blink {
+    animation: blink 1.05s steps(1, end) infinite;
+}
+
+/* Animated underline used on links */
+.link-neon {
+    color: var(--color-neon-cyan);
+    text-decoration: none;
+    border-bottom: 1px dashed transparent;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+.link-neon:hover {
+    border-bottom-color: var(--color-neon-pink);
+    color: var(--color-neon-pink);
+}

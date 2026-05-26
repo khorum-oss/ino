@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 class SandboxTest {
     @Test
     fun `minimum setup translates correctly`() {
-        val agent = agent {
+        val agent = agentDefinition {
             name = "test-agent"
             provider {
                 local {
@@ -14,7 +14,7 @@ class SandboxTest {
             }
         }
 
-        val expected = Agent(
+        val expected = AgentDefinition(
             name = "test-agent",
             provider = ProviderConfig(
                 local = LocalConfig(
@@ -149,7 +149,7 @@ class SandboxTest {
         }
     }
 
-    fun setupTest(providerBlock: ProviderConfigDslBuilder.() -> Unit): Agent = agent {
+    fun setupTest(providerBlock: ProviderConfigDslBuilder.() -> Unit): AgentDefinition = agentDefinition {
         name = "test-agent"
         description = "test description"
         systemPrompt = "You exist in a test state"
@@ -180,8 +180,8 @@ class SandboxTest {
         }
     }
 
-    fun createExpected(providerConfig: ProviderConfig): Agent {
-        return Agent(
+    fun createExpected(providerConfig: ProviderConfig): AgentDefinition {
+        return AgentDefinition(
             name = "test-agent",
             description = "test description",
             systemPrompt = "You exist in a test state",
