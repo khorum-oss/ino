@@ -43,16 +43,34 @@ class AgentBridge(
 
     /** Translate a DSL `Agent` into a runnable Koog agent. */
     fun toKoogAgent(agent: Agent): AIAgent<String, String> {
-        val cfg: LlmProviderConfig = agent.provider.selected
-        val executor: PromptExecutor = cfg.toPromptExecutor()
-        val model: LLModel = cfg.toLLModel()
-
+        val c = componentsFor(agent)
         return AIAgent(
-            promptExecutor = executor,
-            llmModel = model,
+            promptExecutor = c.executor,
+            llmModel = c.model,
+            systemPrompt = c.systemPrompt,
+        )
+    }
+
+    /**
+     * Lower-level translation: just the Koog primitives, without wrapping them
+     * in an `AIAgent`. Used by the streaming path, which talks to the
+     * `PromptExecutor` directly to get a `Flow<StreamFrame>`.
+     */
+    fun componentsFor(agent: Agent): BridgeComponents {
+        val cfg: LlmProviderConfig = agent.provider.selected
+        return BridgeComponents(
+            executor = cfg.toPromptExecutor(),
+            model = cfg.toLLModel(),
             systemPrompt = agent.systemPrompt,
         )
     }
+
+    /** Resolved Koog runtime pieces for a single DSL agent. */
+    data class BridgeComponents(
+        val executor: PromptExecutor,
+        val model: LLModel,
+        val systemPrompt: String,
+    )
 
     /**
      * Translate a provider config into a Koog `PromptExecutor`.

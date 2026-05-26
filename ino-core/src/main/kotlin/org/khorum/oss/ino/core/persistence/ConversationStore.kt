@@ -130,4 +130,13 @@ class ConversationStore(
     fun messagesFor(sessionId: String): List<Message> = messages.listBySession(sessionId)
 
     fun invocationsFor(messageId: String): List<ToolInvocation> = toolInvocations.listByMessage(messageId)
+
+    fun findSession(id: String): Session? = sessions.findById(id)
+
+    fun listSessionsByAgent(agentName: String, limit: Int = DEFAULT_LIST_LIMIT, offset: Int = 0): List<Session> =
+        sessions.listByAgent(agentName, limit, offset)
+
+    companion object {
+        const val DEFAULT_LIST_LIMIT: Int = 50
+    }
 }
