@@ -3,6 +3,7 @@ package org.khorum.oss.ino.core.agent
 import kotlinx.coroutines.Job
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Tracks in-flight streaming runs by session id so an external `DELETE
@@ -39,5 +40,3 @@ class ActiveRunRegistry {
 
     fun isActive(sessionId: String): Boolean = jobs.containsKey(sessionId)
 }
-
-private class CancellationException(message: String) : kotlinx.coroutines.CancellationException(message)

@@ -5,16 +5,18 @@ import ai.koog.prompt.llm.LLMProvider
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.khorum.oss.ino.core.config.AgentConfig
+import org.khorum.oss.ino.core.config.koog.AgentBridge
 import org.khorum.oss.ino.dsl.AnthropicConfig
 import org.khorum.oss.ino.dsl.LocalConfig
 import org.khorum.oss.ino.dsl.OpenAiConfig
-import org.khorum.oss.ino.dsl.agent
+import org.khorum.oss.ino.dsl.agentDefinition
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Pure-translation tests for [AgentBridge]. No network, no Spring context —
+ * Pure-translation tests for [org.khorum.oss.ino.core.config.koog.AgentBridge]. No network, no Spring context —
  * just verifies that DSL provider configs map to the right Koog `LLModel`
  * shape and that the bridge produces a usable `AIAgent`.
  *
@@ -23,7 +25,10 @@ import kotlin.test.assertTrue
  */
 class AgentBridgeTest {
 
-    private val bridge = AgentBridge()
+    // AgentBridge needs the OpenAi config so its `baseUrl` default is wired in.
+    // Production reads `ino.providers.openai.base-url`; tests construct inline.
+    private val openAiConfig = AgentConfig.OpenAi(baseUrl = "https://api.openai.com")
+    private val bridge = AgentBridge(openAiConfig)
 
     @Nested
     inner class ToLLModel {
@@ -62,11 +67,11 @@ class AgentBridgeTest {
     }
 
     @Nested
-    inner class ToKoogAgent {
+    inner class ToKoogAgentDefinition {
 
         @Test
         fun `produces a runnable AIAgent for OpenAi config`() {
-            val a = agent {
+            val a = agentDefinition {
                 name = "openai-test"
                 provider {
                     openai {
@@ -85,7 +90,7 @@ class AgentBridgeTest {
 
         @Test
         fun `produces a runnable AIAgent for Local config`() {
-            val a = agent {
+            val a = agentDefinition {
                 name = "local-test"
                 provider {
                     local {
@@ -103,7 +108,7 @@ class AgentBridgeTest {
 
         @Test
         fun `falls over for unsupported provider variants`() {
-            val a = agent {
+            val a = agentDefinition {
                 name = "anthropic-test"
                 provider {
                     anthropic { model = "claude-opus-4-7" }

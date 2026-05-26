@@ -80,3 +80,56 @@ compileKotlin.compilerOptions {
 tasks.test {
     useJUnitPlatform()
 }
+
+// ---------------------------------------------------------------------------
+// Dashboard integration
+// ---------------------------------------------------------------------------
+// `npm run build` in ino-dashboard produces a static SvelteKit app at
+// ino-dashboard/build/. We copy it into Spring Boot's static resources at
+// build/resources/main/static/dashboard/, so Spring serves it at /dashboard/**
+// automatically once you run `./gradlew :ino-core:bootRun`.
+//
+// The dashboard build is skipped if `npm install` hasn't been run — that way
+// `./gradlew :ino-core:bootRun` still works without a Node setup; it just
+// serves no static assets. Run `npm install` in ino-dashboard once to enable.
+
+val dashboardDir = rootProject.layout.projectDirectory.dir("ino-dashboard")
+val dashboardBuildOutput = dashboardDir.dir("build")
+val dashboardStaticTarget = layout.buildDirectory.dir("resources/main/static/dashboard")
+
+val buildDashboard by tasks.registering(Exec::class) {
+    description = "Builds the SvelteKit dashboard via npm (run npm install first)."
+    group = "build"
+    workingDir = dashboardDir.asFile
+    val npmCmd = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) "npm.cmd" else "npm"
+    commandLine(npmCmd, "run", "build")
+    environment("DASHBOARD_BASE", "/dashboard")
+    // Incremental: rebuild only when sources change.
+    inputs.dir(dashboardDir.dir("src"))
+    inputs.file(dashboardDir.file("package.json"))
+    inputs.file(dashboardDir.file("svelte.config.js"))
+    inputs.file(dashboardDir.file("vite.config.ts"))
+    outputs.dir(dashboardBuildOutput)
+    onlyIf {
+        val nodeModules = dashboardDir.dir("node_modules").asFile
+        val present = nodeModules.exists()
+        if (!present) {
+            logger.lifecycle(
+                "Skipping :ino-core:buildDashboard — run `npm install` in ino-dashboard to enable embedded UI.",
+            )
+        }
+        present
+    }
+}
+
+val copyDashboard by tasks.registering(Copy::class) {
+    description = "Copies the built dashboard into ino-core static resources."
+    group = "build"
+    dependsOn(buildDashboard)
+    from(dashboardBuildOutput)
+    into(dashboardStaticTarget)
+}
+
+tasks.processResources {
+    dependsOn(copyDashboard)
+}

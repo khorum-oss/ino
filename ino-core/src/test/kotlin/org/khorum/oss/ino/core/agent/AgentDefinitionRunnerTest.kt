@@ -13,10 +13,10 @@ import org.khorum.oss.ino.core.domain.Message
 import org.khorum.oss.ino.core.domain.MessageRole
 import org.khorum.oss.ino.core.domain.Session
 import org.khorum.oss.ino.core.domain.SessionStatus
-import org.khorum.oss.ino.core.koog.AgentBridge
+import org.khorum.oss.ino.core.config.koog.AgentBridge
 import org.khorum.oss.ino.core.persistence.ConversationStore
-import org.khorum.oss.ino.dsl.Agent
-import org.khorum.oss.ino.dsl.agent
+import org.khorum.oss.ino.dsl.AgentDefinition
+import org.khorum.oss.ino.dsl.agentDefinition
 import java.time.Instant
 import kotlin.test.assertEquals
 
@@ -25,7 +25,7 @@ import kotlin.test.assertEquals
  * are mocked so these tests don't need a real LLM endpoint; the live wire
  * path is covered by `KoogBridgeLlamaSmokeTest`.
  */
-class AgentRunnerTest {
+class AgentDefinitionRunnerTest {
 
     private val bridge: AgentBridge = mockk()
     private val store: ConversationStore = mockk(relaxed = true)
@@ -33,7 +33,7 @@ class AgentRunnerTest {
     private val activeRuns: ActiveRunRegistry = ActiveRunRegistry()
     private val runner = AgentRunner(registry, store, bridge, activeRuns)
 
-    private fun sampleAgent(name: String = "smoke"): Agent = agent {
+    private fun sampleAgent(name: String = "smoke"): AgentDefinition = agentDefinition {
         this.name = name
         provider {
             local {

@@ -27,6 +27,7 @@ class SessionController(
     private val activeRuns: ActiveRunRegistry,
 ) {
 
+    // ai: comments
     @PostMapping
     fun create(@RequestBody request: CreateSessionRequest): ResponseEntity<SessionDto> {
         if (registry.findByName(request.agent) == null) {

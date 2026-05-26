@@ -1,6 +1,7 @@
-package org.khorum.oss.ino.core.koog
+package org.khorum.oss.ino.core.config.koog
 
 import ai.koog.http.client.ktor.KtorKoogHttpClient
+import org.khorum.oss.ino.core.config.AgentConfig
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -13,12 +14,17 @@ import org.springframework.context.annotation.Configuration
  * instead of relying on autoconfig.
  */
 @Configuration
-class KoogConfig {
+class KoogConfig(
+    private val agentOpenAiConfig: AgentConfig.OpenAi
+) {
 
     @Bean
     fun koogHttpClientFactory(): KtorKoogHttpClient.Factory = KtorKoogHttpClient.Factory()
 
     @Bean
     fun agentBridge(httpClientFactory: KtorKoogHttpClient.Factory): AgentBridge =
-        AgentBridge(httpClientFactory = httpClientFactory)
+        AgentBridge(
+            agentOpenAiConfig = agentOpenAiConfig,
+            httpClientFactory = httpClientFactory
+        )
 }

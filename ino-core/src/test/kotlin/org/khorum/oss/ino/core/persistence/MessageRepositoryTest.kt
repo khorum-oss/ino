@@ -5,13 +5,13 @@ import org.khorum.oss.ino.core.domain.Message
 import org.khorum.oss.ino.core.domain.MessageRole
 import org.khorum.oss.ino.core.domain.Session
 import org.khorum.oss.ino.core.domain.SessionStatus
-import org.khorum.oss.ino.core.util.UuidV7
+import org.khorum.oss.ino.core.util.UuidV7Generator
 import java.time.Instant
 import kotlin.test.assertEquals
 
 class MessageRepositoryTest : RepositorySliceTest() {
 
-    private val ids by lazy { UuidV7(clock) }
+    private val ids by lazy { UuidV7Generator(clock) }
     private val sessions by lazy { SessionRepository(jdbc, mapper, clock) }
     private val repo by lazy { MessageRepository(jdbc, mapper, clock) }
 

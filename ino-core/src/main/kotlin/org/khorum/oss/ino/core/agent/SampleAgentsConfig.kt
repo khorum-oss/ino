@@ -1,7 +1,8 @@
 package org.khorum.oss.ino.core.agent
 
-import org.khorum.oss.ino.dsl.Agent
-import org.khorum.oss.ino.dsl.agent
+import org.khorum.oss.ino.core.config.AgentConfig
+import org.khorum.oss.ino.dsl.AgentDefinition
+import org.khorum.oss.ino.dsl.agentDefinition
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,31 +13,30 @@ import org.springframework.context.annotation.Configuration
  * Spring `@Bean`s keeps the wiring obvious and DI-friendly.
  *
  * Add a new agent by:
- *  1. Defining it here as a top-level helper function returning [Agent].
+ *  1. Defining it here as a top-level helper function returning [AgentDefinition].
  *  2. Adding the function reference to the `agentRegistry` bean below.
  */
 @Configuration
 class SampleAgentsConfig(
-    @Value($$"${app.llama-server.base-url:http://127.0.0.1:11435}")
-    private val llamaServerBaseUrl: String,
+    private val agentLocalConfig: AgentConfig.Local,
 ) {
 
     @Bean
     fun agentRegistry(): AgentRegistry = AgentRegistry(
         listOf(
             llamaLocalAgent(),
-        ),
+        )
     )
 
-    private fun llamaLocalAgent(): Agent = agent {
-        name = "llama-local"
-        description = "Local llama.cpp server (qwen3-coder by default)."
+    private fun llamaLocalAgent(): AgentDefinition = agentDefinition {
+        name = agentLocalConfig.name
+        description = agentLocalConfig.description
         provider {
             local {
-                model = "qwen3-coder"
-                host = llamaServerBaseUrl
+                model = agentLocalConfig.model
+                host = agentLocalConfig.baseUrl
             }
         }
-        systemPrompt = "You are a helpful, concise assistant. Reply in plain text."
+        systemPrompt = agentLocalConfig.systemPrompt
     }
 }

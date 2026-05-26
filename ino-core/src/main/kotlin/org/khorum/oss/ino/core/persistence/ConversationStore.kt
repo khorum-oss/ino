@@ -6,7 +6,7 @@ import org.khorum.oss.ino.core.domain.Session
 import org.khorum.oss.ino.core.domain.SessionStatus
 import org.khorum.oss.ino.core.domain.ToolInvocation
 import org.khorum.oss.ino.core.domain.ToolInvocationStatus
-import org.khorum.oss.ino.core.util.UuidV7
+import org.khorum.oss.ino.core.util.UuidV7Generator
 import org.springframework.stereotype.Component
 import java.time.Clock
 
@@ -20,7 +20,7 @@ class ConversationStore(
     private val sessions: SessionRepository,
     private val messages: MessageRepository,
     private val toolInvocations: ToolInvocationRepository,
-    private val ids: UuidV7,
+    private val ids: UuidV7Generator,
     private val clock: Clock,
 ) {
 

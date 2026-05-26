@@ -2,14 +2,14 @@ package org.khorum.oss.ino.core.agent
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.khorum.oss.ino.dsl.Agent
-import org.khorum.oss.ino.dsl.agent
+import org.khorum.oss.ino.dsl.AgentDefinition
+import org.khorum.oss.ino.dsl.agentDefinition
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-class AgentRegistryTest {
+class AgentDefinitionRegistryTest {
 
-    private fun localAgent(named: String): Agent = agent {
+    private fun localAgent(named: String): AgentDefinition = agentDefinition {
         name = named
         provider {
             local {

@@ -17,7 +17,7 @@ import java.util.UUID
  * Lex-sort on the resulting string equals chrono-sort within the same millisecond
  * batch — exactly the property we want for SQLite TEXT primary keys.
  */
-class UuidV7(
+class UuidV7Generator(
     private val clock: Clock = Clock.systemUTC(),
     private val random: SecureRandom = SecureRandom(),
 ) {

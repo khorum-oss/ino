@@ -8,9 +8,9 @@ import org.khorum.oss.ino.core.agent.ActiveRunRegistry
 import org.khorum.oss.ino.core.agent.AgentRegistry
 import org.khorum.oss.ino.core.agent.AgentRunner
 import org.khorum.oss.ino.core.api.dto.StreamEventDto
-import org.khorum.oss.ino.core.koog.AgentBridge
+import org.khorum.oss.ino.core.config.koog.AgentBridge
 import org.khorum.oss.ino.core.persistence.ConversationStore
-import org.khorum.oss.ino.dsl.agent
+import org.khorum.oss.ino.dsl.agentDefinition
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -42,13 +42,13 @@ class StreamingSmokeTest {
     @Test
     fun `streaming run emits text deltas and persists the assistant message`() = runBlocking {
         // Build a one-off agent via DSL — exercises konstellation → bridge → runner.
-        val dslAgent = agent {
+        val dslAgent = agentDefinition {
             name = "streaming-smoke"
             description = "ad-hoc agent used by StreamingSmokeTest"
             provider {
                 local {
-                    model = "qwen3-coder"
-                    host = "http://127.0.0.1:11435"
+                    model = "qwen3.6-35b-a3b"
+                    host = "http://127.0.0.1:11436"
                 }
             }
             systemPrompt = "You are concise. Reply with exactly one short sentence."

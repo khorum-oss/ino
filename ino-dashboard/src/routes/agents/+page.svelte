@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { base } from '$app/paths';
     import { agentsApi } from '$lib/api/client';
     import type { AgentSummaryDto } from '$lib/api/types';
     import AgentBadge from '$lib/components/registry/AgentBadge.svelte';
@@ -37,7 +38,7 @@
     {:else}
         <div class="grid grid-cols-1 gap-3">
             {#each agents as agent (agent.name)}
-                <a href={`/agents/${agent.name}`} class="block link-neon !border-b-0">
+                <a href={`${base}/agents/${agent.name}`} class="block link-neon !border-b-0">
                     <TerminalCard accent="cyan">
                         <div class="flex items-center justify-between gap-4">
                             <div class="flex flex-col gap-1">

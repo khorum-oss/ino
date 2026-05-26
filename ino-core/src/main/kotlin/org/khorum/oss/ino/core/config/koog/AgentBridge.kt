@@ -1,4 +1,4 @@
-package org.khorum.oss.ino.core.koog
+package org.khorum.oss.ino.core.config.koog
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.http.client.ktor.KtorKoogHttpClient
@@ -9,11 +9,14 @@ import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
-import org.khorum.oss.ino.dsl.Agent
+import org.khorum.oss.ino.core.config.AgentConfig
+import org.khorum.oss.ino.dsl.AgentDefinition
 import org.khorum.oss.ino.dsl.AnthropicConfig
 import org.khorum.oss.ino.dsl.LlmProviderConfig
 import org.khorum.oss.ino.dsl.LocalConfig
 import org.khorum.oss.ino.dsl.OpenAiConfig
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Component
 
 /**
  * Bridge from konstellation DSL agent definitions to Koog's `AIAgent`.
@@ -34,6 +37,7 @@ import org.khorum.oss.ino.dsl.OpenAiConfig
  * `@Component`.
  */
 class AgentBridge(
+    private val agentOpenAiConfig: AgentConfig.OpenAi,
     /**
      * Koog's HTTP client factory. Default matches the sandbox; inject a
      * custom factory in tests or to customize pooling / timeouts.
@@ -42,12 +46,12 @@ class AgentBridge(
 ) {
 
     /** Translate a DSL `Agent` into a runnable Koog agent. */
-    fun toKoogAgent(agent: Agent): AIAgent<String, String> {
-        val c = componentsFor(agent)
+    fun toKoogAgent(agentDefinition: AgentDefinition): AIAgent<String, String> {
+        val bridgeComponents = componentsFor(agentDefinition)
         return AIAgent(
-            promptExecutor = c.executor,
-            llmModel = c.model,
-            systemPrompt = c.systemPrompt,
+            promptExecutor = bridgeComponents.executor,
+            llmModel = bridgeComponents.model,
+            systemPrompt = bridgeComponents.systemPrompt,
         )
     }
 
@@ -56,12 +60,12 @@ class AgentBridge(
      * in an `AIAgent`. Used by the streaming path, which talks to the
      * `PromptExecutor` directly to get a `Flow<StreamFrame>`.
      */
-    fun componentsFor(agent: Agent): BridgeComponents {
-        val cfg: LlmProviderConfig = agent.provider.selected
+    fun componentsFor(agentDefinition: AgentDefinition): BridgeComponents {
+        val cfg: LlmProviderConfig = agentDefinition.provider.selected
         return BridgeComponents(
             executor = cfg.toPromptExecutor(),
             model = cfg.toLLModel(),
-            systemPrompt = agent.systemPrompt,
+            systemPrompt = agentDefinition.systemPrompt,
         )
     }
 
@@ -82,7 +86,7 @@ class AgentBridge(
     fun LlmProviderConfig.toPromptExecutor(): PromptExecutor = when (this) {
         is OpenAiConfig -> openAiCompatibleExecutor(
             apiKey = readApiKey(apiKeyEnvVar),
-            baseUrl = baseUrl ?: DEFAULT_OPENAI_BASE_URL,
+            baseUrl = baseUrl ?: agentOpenAiConfig.baseUrl,
         )
 
         is LocalConfig -> openAiCompatibleExecutor(
@@ -135,7 +139,6 @@ class AgentBridge(
     }
 
     companion object {
-        const val DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
 
         private val OPENAI_COMPATIBLE_CAPABILITIES = listOf(
             LLMCapability.Completion,

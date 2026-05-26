@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
+    import { base } from '$app/paths';
     import { agentsApi, sessionsApi } from '$lib/api/client';
     import type { AgentSummaryDto } from '$lib/api/types';
     import AgentBadge from '$lib/components/registry/AgentBadge.svelte';
@@ -28,7 +29,9 @@
         creating = name;
         try {
             const session = await sessionsApi.create({ agent: name });
-            await goto(`/sessions/${session.id}`);
+            // Prepend SvelteKit base ('/dashboard' in production, '' in dev)
+            // so the browser navigates to /dashboard/sessions/X, not /sessions/X.
+            await goto(`${base}/sessions/${session.id}`);
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
             creating = null;

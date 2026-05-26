@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test
 import org.khorum.oss.ino.core.domain.MessageRole
 import org.khorum.oss.ino.core.domain.SessionStatus
 import org.khorum.oss.ino.core.domain.ToolInvocationStatus
-import org.khorum.oss.ino.core.util.UuidV7
+import org.khorum.oss.ino.core.util.UuidV7Generator
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -16,7 +16,7 @@ class ConversationStoreTest : RepositorySliceTest() {
             sessions = SessionRepository(jdbc, mapper, clock),
             messages = MessageRepository(jdbc, mapper, clock),
             toolInvocations = ToolInvocationRepository(jdbc, clock),
-            ids = UuidV7(clock),
+            ids = UuidV7Generator(clock),
             clock = clock,
         )
     }

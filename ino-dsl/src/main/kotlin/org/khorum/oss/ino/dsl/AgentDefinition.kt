@@ -54,7 +54,7 @@ import org.khorum.oss.konstellation.metaDsl.annotation.defaults.state.standard.D
         "the primary provider rate-limits or errors out; per-tool budget caps; " +
         "scheduled execution metadata for cron-driven runs"
 )
-data class Agent(
+data class AgentDefinition(
     val name: String,
     @DefaultEmptyString
     val description: String = "",

@@ -7,14 +7,14 @@ import org.khorum.oss.ino.core.domain.Session
 import org.khorum.oss.ino.core.domain.SessionStatus
 import org.khorum.oss.ino.core.domain.ToolInvocation
 import org.khorum.oss.ino.core.domain.ToolInvocationStatus
-import org.khorum.oss.ino.core.util.UuidV7
+import org.khorum.oss.ino.core.util.UuidV7Generator
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 class ToolInvocationRepositoryTest : RepositorySliceTest() {
 
-    private val ids by lazy { UuidV7(clock) }
+    private val ids by lazy { UuidV7Generator(clock) }
     private val sessions by lazy { SessionRepository(jdbc, mapper, clock) }
     private val messages by lazy { MessageRepository(jdbc, mapper, clock) }
     private val repo by lazy { ToolInvocationRepository(jdbc, clock) }
