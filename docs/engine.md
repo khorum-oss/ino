@@ -1,217 +1,220 @@
-# Engine, Provider SPI, Tool SPI
+# Engine
 
-The engine in `ino-core` runs the agent loop: pulls a `CompletionRequest` together, drives an `LlmProvider` stream, dispatches tool calls back to a `ToolHandler`, and persists results. Two SPIs make the engine extensible without modifying core.
+The engine in `ino-core` doesn't run the agent loop itself — it delegates to **Koog** (`ai.koog:koog-agents:1.0.0`), JetBrains' Kotlin agent framework. The work `ino-core` *does* own is:
 
-## The two SPIs
+- **Translation**: turn a konstellation DSL `Agent` into a Koog `AIAgent` (`AgentBridge`)
+- **Wiring**: register the right Koog `LLMClient` / `PromptExecutor` / `LLModel` for each provider variant
+- **Persistence**: surface Koog's conversation events back into the SQLite store (sessions, messages, tool_invocations)
+- **REST/SSE surface**: stream Koog's events to the dashboard
 
-```kotlin
-interface LlmProvider {
-    val id: String                                       // "anthropic" | "openai" | "ollama"
-    fun supports(config: LlmProviderConfig): Boolean     // sealed-type matcher
-    suspend fun complete(req: CompletionRequest): CompletionResponse
-    fun stream(req: CompletionRequest): Flow<CompletionEvent>
-}
+This document covers the engine boundary as it stands today. The original spec called for custom `LlmProvider` / `ToolHandler` / `CompletionEvent` SPIs; those were dropped when we adopted Koog. See `roadmap.md` decision log for the rationale.
 
-interface ToolHandler {
-    val name: String
-    val schema: ToolSchema                               // generated from @GeneratedDsl Tool
-    suspend fun invoke(args: JsonNode, ctx: ToolContext): ToolResult
-}
-```
+## What Koog provides (so we don't reinvent it)
 
-Both registered via `META-INF/services/…`. `ProviderRegistry` and `ToolRegistry` are Spring beans that load via `ServiceLoader` at startup and additionally scan `~/.ino/extensions/*.jar` (URLClassLoader) for runtime additions.
+| Concern | Koog | Notes |
+|---|---|---|
+| LLM clients | `OpenAILLMClient`, `AnthropicLLMClient`, `GoogleLLMClient`, `OllamaLLMClient`, `MistralAIClient`, `DeepSeekClient`, `OpenRouterClient`, `BedrockClient` | One artifact (`koog-agents`) pulls them all |
+| Multi-provider routing | `MultiLLMPromptExecutor(*clients)` | Routes by `LLMModel.provider` enum |
+| Agent loop | `AIAgent<Input, Output>` | Built-in iteration, tool dispatch, message history |
+| Tool definitions | `@Tool`-annotated functions or `ToolSet` classes | Registered via `ToolRegistry.builder()` |
+| Streaming | `executeStreaming()` returning `Flow<StreamFrame>` | Per-token chunks + tool-call frames |
+| Graph strategies | `AIAgentGraphStrategy` | DAG of LLM nodes / tool execution / branching — strictly more powerful than a linear loop |
+| Fallback chains | `PromptExecutor` fallback config | Switch providers on rate-limit or error |
+| MCP integration | First-class | Connect to MCP servers as tool sources |
+
+## What we own
 
 ```mermaid
 classDiagram
-    class LlmProvider {
-        <<interface>>
-        +String id
-        +supports(LlmProviderConfig) Boolean
-        +complete(CompletionRequest) CompletionResponse
-        +stream(CompletionRequest) Flow~CompletionEvent~
-    }
-
-    class ToolHandler {
-        <<interface>>
+    class Agent {
+        <<DSL>>
         +String name
-        +ToolSchema schema
-        +invoke(JsonNode, ToolContext) ToolResult
+        +ProviderConfig provider
+        +String systemPrompt
+        +List~Tool~ tools
+        +Int maxIterations
+        +Long? budgetUsdMicros
+    }
+    class ProviderConfig {
+        <<DSL>>
+        +OpenAiConfig? openai
+        +LocalConfig? local
+        +AnthropicConfig? anthropic
+        +LlmProviderConfig? custom
+        +LlmProviderConfig selected
+    }
+    class AgentBridge {
+        +KtorKoogHttpClient.Factory httpClientFactory
+        +toKoogAgent(Agent) AIAgent~String,String~
+        -toPromptExecutor() PromptExecutor
+        -toLLModel() LLModel
+    }
+    class AIAgent {
+        <<Koog>>
+        +run(input) Output
+        +executeStreaming(input) Flow~StreamFrame~
+    }
+    class PromptExecutor {
+        <<Koog>>
+    }
+    class LLModel {
+        <<Koog>>
+        +LLMProvider provider
+        +String id
+        +List~LLMCapability~ capabilities
     }
 
-    class ProviderRegistry {
-        +resolve(LlmProviderConfig) LlmProvider
-        +list() List~LlmProvider~
-    }
-
-    class ToolRegistry {
-        +get(String) ToolHandler
-        +schemasFor(List~Tool~) List~ToolSchema~
-    }
-
-    class AgentExecutor {
-        -ProviderRegistry providers
-        -ToolRegistry tools
-        -ConversationStore store
-        +run(Session, Message) Flow~CompletionEvent~
-    }
-
-    AgentExecutor --> ProviderRegistry
-    AgentExecutor --> ToolRegistry
-    ProviderRegistry o-- "many" LlmProvider
-    ToolRegistry o-- "many" ToolHandler
+    Agent --> ProviderConfig
+    AgentBridge ..> Agent : reads
+    AgentBridge --> PromptExecutor : constructs
+    AgentBridge --> LLModel : constructs
+    AgentBridge --> AIAgent : returns
+    AIAgent --> PromptExecutor
+    AIAgent --> LLModel
 ```
 
-## Unified stream type
+`AgentBridge.toKoogAgent(dslAgent)` is the join. Everything else is plumbing.
 
-Each provider speaks a different wire format (Anthropic SSE with `input_json_delta`, OpenAI Chat Completions chunks, Ollama JSON-NL). Each adapter normalizes into one internal sealed type so the dashboard sees one stable shape regardless of provider:
+## `AgentBridge` — the translator
+
+Located at `org.khorum.oss.ino.core.koog.AgentBridge`. Stateless, can be registered as a Spring `@Component` for HTTP-client-factory lifecycle hooks.
 
 ```kotlin
-sealed interface CompletionEvent {
-    data class TextDelta(val text: String) : CompletionEvent
-    data class Reasoning(val text: String) : CompletionEvent
-    data class ToolCallStart(val id: String, val name: String) : CompletionEvent
-    data class ToolCallArgsDelta(val id: String, val argsJsonChunk: String) : CompletionEvent
-    data class ToolCallEnd(val id: String) : CompletionEvent
-    data class End(val stopReason: StopReason, val usage: TokenUsage) : CompletionEvent
+class AgentBridge(
+    private val httpClientFactory: KtorKoogHttpClient.Factory = KtorKoogHttpClient.Factory(),
+) {
+    fun toKoogAgent(agent: Agent): AIAgent<String, String> {
+        val cfg = agent.provider.selected
+        return AIAgent(
+            promptExecutor = cfg.toPromptExecutor(),
+            llmModel = cfg.toLLModel(),
+            systemPrompt = agent.systemPrompt,
+        )
+    }
+    // ... toPromptExecutor() / toLLModel() — see source
 }
-
-enum class StopReason { END_TURN, TOOL_USE, MAX_TOKENS, ERROR, BUDGET_EXHAUSTED, CANCELLED }
 ```
 
-This is the single most load-bearing abstraction in the framework. New event types (citations, web-search results, computer-use screenshots) become new variants — additive rather than breaking.
+### Provider config → Koog client
+
+| DSL config | Koog client | Routing notes |
+|---|---|---|
+| `OpenAiConfig` | `OpenAILLMClient(apiKey, OpenAIClientSettings(baseUrl))` wrapped in `MultiLLMPromptExecutor` | API key read from `apiKeyEnvVar`; baseUrl defaults to `https://api.openai.com` |
+| `LocalConfig` | Same `OpenAILLMClient`, with `apiKey=""` and `baseUrl=host` | Covers **llama-server**, **vLLM**, **Ollama's OpenAI shim** — all three speak `/v1/chat/completions` |
+| `AnthropicConfig` | Not yet wired — see `// TODO(@Enhancement)` in the bridge | Phase 2 |
+| `ProviderConfig.custom` | Not yet wired — registry-by-class lookup | Phase 2 |
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Streaming
-    Streaming --> Streaming : TextDelta / Reasoning
-    Streaming --> ToolCallActive : ToolCallStart
-    ToolCallActive --> ToolCallActive : ToolCallArgsDelta
-    ToolCallActive --> Streaming : ToolCallEnd
-    Streaming --> EndTurn : End(END_TURN)
-    Streaming --> ToolDispatch : End(TOOL_USE)
-    ToolDispatch --> Streaming : tool result appended
-    Streaming --> Halt : End(MAX_TOKENS / ERROR / BUDGET / CANCELLED)
-    EndTurn --> [*]
-    Halt --> [*]
+flowchart LR
+    DSL["agent { provider { local { host = ... } } }"]
+    SEL["agent.provider.selected: LocalConfig"]
+    BR["AgentBridge.toKoogAgent"]
+    EXE["MultiLLMPromptExecutor<br/>(OpenAILLMClient → llama-server)"]
+    MOD["LLModel(<br/>OpenAI provider,<br/>id = model,<br/>caps = [Completion, OpenAIEndpoint.Completions]<br/>)"]
+    KA["Koog AIAgent&lt;String, String&gt;"]
+
+    DSL --> SEL --> BR
+    BR --> EXE
+    BR --> MOD
+    EXE --> KA
+    MOD --> KA
 ```
 
-## Execution loop
+### Capabilities — the load-bearing detail
+
+Every `LLModel` passed to Koog needs to declare what the model supports. For OpenAI-compatible endpoints we declare exactly two:
+
+```kotlin
+listOf(
+    LLMCapability.Completion,                // classic chat completion
+    LLMCapability.OpenAIEndpoint.Completions // legacy /v1/chat/completions, NOT new Responses API
+)
+```
+
+Without `OpenAIEndpoint.Completions`, Koog routes to the new Responses API and llama-server returns `404`. The error from Koog when the capability set is incomplete is:
+
+```
+IllegalStateException: Unsupported OpenAI API endpoint for model: <id>
+```
+
+This is a footgun. The bridge defines the capability list once as a constant; future variants follow the same pattern.
+
+## End-to-end request flow (current)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant API as REST/SSE controller
-    participant EX as AgentExecutor
-    participant PR as ProviderRegistry
-    participant LP as LlmProvider
-    participant TR as ToolRegistry
-    participant TH as ToolHandler
-    participant CS as ConversationStore
+    participant U as User
+    participant API as REST/SSE controller<br/>(TODO)
+    participant BR as AgentBridge
+    participant KA as Koog AIAgent
+    participant LP as Koog OpenAILLMClient
+    participant SRV as llama-server / OpenAI / etc.
+    participant CS as ConversationStore<br/>(TODO: wire)
 
-    API->>EX: run(session, userMessage)
-    EX->>CS: append user message
-    loop until End != TOOL_USE
-        EX->>PR: resolve(agent.provider.selected)
-        PR-->>EX: LlmProvider
-        EX->>LP: stream(CompletionRequest)
-        loop streaming
-            LP-->>EX: CompletionEvent
-            EX-->>API: forward as SSE
-        end
-        LP-->>EX: End
-        EX->>CS: persist assistant message
-        alt End.stopReason == TOOL_USE
-            par each tool_call
-                EX->>CS: insert tool_invocation (pending)
-                EX->>TR: get(toolName)
-                TR-->>EX: ToolHandler
-                EX->>TH: invoke(args, ctx)
-                TH-->>EX: ToolResult
-                EX->>CS: update tool_invocation + tool message
-            end
-        else terminal
-            EX-->>API: End event, exit loop
-        end
-    end
+    U->>API: POST /sessions/{id}/messages
+    API->>CS: append user message
+    API->>BR: toKoogAgent(dslAgent)
+    BR-->>API: AIAgent
+    API->>KA: run(userMessage)
+    KA->>LP: stream(prompt, model)
+    LP->>SRV: POST /v1/chat/completions
+    SRV-->>LP: SSE chunks
+    LP-->>KA: StreamFrame stream
+    KA-->>API: AIAgent state transitions
+    API-->>U: SSE events
+    KA-->>API: result string
+    API->>CS: persist assistant message
 ```
 
-### Loop guards
+Two pieces are still TODO:
+- The REST/SSE controller layer (next planned step)
+- Persistence wiring inside the loop — the bridge today produces a fresh `AIAgent` per call; conversation history needs to be threaded through
 
-- **Max iterations**: `Agent.maxIterations` (default 25). Cycle counter incremented on each `End(TOOL_USE)`. Hitting the cap emits `End(MAX_TOKENS)`-equivalent and halts.
-- **Cost budget**: `Agent.budgetUsdMicros`. Engine accumulates `usage.costUsdMicros` per stream; crossing the cap emits `End(BUDGET_EXHAUSTED)`.
-- **Cancellation**: `DELETE /sessions/{id}/run` cancels the structured `CoroutineScope` tied to the session. Partial state already persisted survives; the engine emits `End(CANCELLED)`.
+## Streaming
 
-### Backpressure
+Koog's streaming surface is `executeStreaming(prompt, model, tools)` → `Flow<StreamFrame>`. Each frame is one of several variants:
+- text deltas (per-token output)
+- tool-call frames (name + arguments JSON, sometimes streamed)
+- completion-end frame
 
-The SSE channel uses Flow `BUFFER`/`DROP_OLDEST` strategies so a slow client doesn't stall the LLM stream. The store accumulates assistant message text in memory until `End`, then writes once.
+The REST/SSE controller layer will translate `Flow<StreamFrame>` into the SSE format described in [api.md](api.md). The translation is mechanical; no new abstraction needed.
+
+## Tools
+
+Koog tools are either:
+- `@Tool`-annotated methods on a `ToolSet` class — convenient for built-ins
+- Custom `Tool` instances registered with `ToolRegistry.builder().tool(...)`
+
+The bridge currently doesn't translate DSL `Tool` declarations into Koog tools — that's a phase-1.5 enhancement. Two strategies on the table:
+
+1. **Reflection-based**: walk `Agent.tools`, look up matching `@Component`-annotated `ToolSet` beans by `Tool.name`, register them with Koog's `ToolRegistry`. DSL declares; bean provides implementation.
+2. **DSL-emitted bridge**: konstellation generates a Koog-compatible tool class per `Tool` declaration. Heavier but compile-time-checked.
+
+Strategy 1 is simpler and is the planned next step after REST/SSE controllers land.
 
 ## Resilience
 
-```mermaid
-flowchart TD
-    REQ[CompletionRequest] --> P{primary stream}
-    P -->|success| OUT[CompletionEvent stream]
-    P -->|429 / 503| R[Resilience4j retry<br/>exponential backoff with jitter<br/>max 3 attempts]
-    R -->|recovered| OUT
-    R -->|exhausted| F{fallbacks empty?}
-    F -->|yes| ERR[End ERROR]
-    F -->|no| FB[try next fallback]
-    FB --> P
+Koog handles retry and provider fallback internally — set up via `MultiLLMPromptExecutor` configuration. The bridge today uses the default policy. Customization (per-provider retry counts, fallback chain order) is a phase-2 concern when multi-provider deployments arrive.
+
+Cancellation: the caller's `CoroutineScope` is the source of truth. `DELETE /sessions/{id}/run` will cancel the scope; Koog stops cleanly mid-stream.
+
+## Testing
+
+The bridge is covered at three layers:
+
+| Layer | File | What it tests |
+|---|---|---|
+| Pure unit | `AgentBridgeTest` | DSL config → Koog `LLModel` mapping, unsupported-variant errors |
+| Wire smoke | `LlamaServerSmokeTest` | Koog → llama-server hand-wired (no bridge) |
+| Bridge smoke | `KoogBridgeLlamaSmokeTest` | DSL → bridge → Koog → llama-server end-to-end |
+
+Both smoke tests are gated by `INO_LIVE_LLAMA=1` and require llama-server running locally. They never run in CI.
+
+```bash
+# Bring up llama-server first, then:
+INO_LIVE_LLAMA=1 ./gradlew :ino-core:test --tests "*LlamaServerSmokeTest*"
+INO_LIVE_LLAMA=1 ./gradlew :ino-core:test --tests "*KoogBridgeLlamaSmokeTest*"
 ```
 
-- Per-provider Resilience4j policy: retry on `429` and `503` with exponential backoff and jitter, max 3 attempts.
-- Fallback chain via `LlmProviderConfig.fallbacks: List<LlmProviderConfig>` (deferred — see `Agent.kt` `@Enhancement` annotation).
-- **Tool errors are not retried by the engine.** They flow back to the LLM as `tool` role messages with structured error JSON; the model can self-correct.
-
-## Handler-attachment pattern
-
-Konstellation can't generate a DSL for a property typed as a `suspend (...) -> ToolResult` lambda. So tools split into two halves:
-
-- **Declaration** (`Tool` data class in `ino-dsl`): name, description, parameter schema. Pure data. Travels via DSL.
-- **Implementation** (`ToolHandler` in an extension JAR): the actual suspend execution body. Registered via `ServiceLoader` and looked up by `Tool.name`.
-
-The engine binds the two at registry lookup time. Tests can inject an `InMemoryToolRegistry` fixture without needing extension JARs on the classpath.
-
-```mermaid
-flowchart LR
-    subgraph DSL[ino-dsl]
-        T[Tool data class<br/>name = web_search<br/>parameters = ...]
-    end
-    subgraph EXT[ino-tools-builtin extension JAR]
-        H[ToolHandler impl<br/>name = web_search<br/>invoke = ...]
-        SVC["META-INF/services/<br/>...ToolHandler"]
-    end
-    subgraph CORE[ino-core]
-        REG[ToolRegistry]
-        EX[AgentExecutor]
-    end
-
-    T -.referenced via name.-> REG
-    SVC -.discovered.-> REG
-    H --> SVC
-    EX -->|invoke by name| REG
-    REG -->|delegates| H
-```
-
-## Tool schema rendering
-
-The generated `Tool` + `ToolParameter` declarations are provider-agnostic. At session start, `ToolRegistry.schemasFor(agent.tools)` walks each agent's tools and renders them into the JSON Schema shape each provider expects:
-
-- **Anthropic**: `tools: [{name, description, input_schema: {…}}]`
-- **OpenAI**: `tools: [{type: "function", function: {name, description, parameters: {…}}}]`
-- **Ollama**: `tools: [{type: "function", function: {name, description, parameters: {…}}}]`
-
-The renderer pattern-matches on `ParameterTypeSpec`:
-
-```kotlin
-fun ParameterTypeSpec.toJsonSchemaTypeJson(): JsonObject = when (this) {
-    is StringSpec  -> json { "type" to "string" }
-    is NumberSpec  -> json { "type" to "number" }
-    is IntegerSpec -> json { "type" to "integer" }
-    is BooleanSpec -> json { "type" to "boolean" }
-    // is ArraySpec  -> json { "type" to "array"; "items" to elementTypeSpec.toJsonSchemaTypeJson() }
-    // is ObjectSpec -> json { "type" to "object"; "properties" to ... }
-}
-```
-
-When phase-2 `ArraySpec`/`ObjectSpec` arrive, they slot in via the same `when`.
+See [testing.md](testing.md) for the broader test strategy.
