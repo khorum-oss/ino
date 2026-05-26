@@ -52,6 +52,8 @@ dependencies {
     // Note: SB starter requires Spring Boot 3, so we wire Koog as plain beans.
     implementation("ai.koog:koog-agents:1.0.0")
 
+    implementation("org.apache.httpcomponents.client5:httpclient5:5.6.1")
+
     // Jackson (newer 3.x coords, matching spektr)
     implementation("tools.jackson.module:jackson-module-kotlin")
 

@@ -80,7 +80,7 @@ class StreamingSmokeTest {
         val history = store.messagesFor(sessionDto.id)
         val assistant = history.singleOrNull { it.role.dbValue == "assistant" }
         assertTrue(assistant != null, "expected exactly one assistant message; got history: $history")
-        assertTrue(!assistant!!.content.isNullOrBlank(), "assistant message should have content")
+        assertTrue(!assistant.content.isNullOrBlank(), "assistant message should have content")
     }
 
     companion object {
